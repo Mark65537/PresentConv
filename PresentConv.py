@@ -265,7 +265,35 @@ class PowerPointCreator:
         print(f"Презентация создана: {output_file}")
         print(f"Количество слайдов: {len(slides)}")
 
+    def add_paragraph_block(self, content):
+        # Если текстового блока ещё нет, создаём его.
+        if self.current_text_frame is None:
+            self.current_text_frame = self.add_textbox(0.75)
+            self.current_text_shape = self.slide.shapes[-1]
+            self.current_text_count = 0
+            paragraph = self.current_text_frame.paragraphs[0]
+        else:
+            # Новый абзац в уже существующем текстовом блоке.
+            paragraph = self.current_text_frame.add_paragraph()
+
+        self.current_text_count += 1
+
+        paragraph.space_after = Pt(18)
+
+        self.add_inline(paragraph, content)
+
+        # Увеличиваем высоту текстового блока.
+        self.current_text_shape.height = Inches(
+            0.75 + (self.current_text_count - 1) * 0.45
+        )
+
+        self.y += 0.55
+
     def add_slide(self, data):
+        self.current_text_frame = None
+        self.current_text_shape = None
+        self.current_text_count = 0
+
         slide = self.prs.slides.add_slide(
             self.prs.slide_layouts[6]
         )
@@ -376,6 +404,16 @@ class PowerPointCreator:
                 run.font.size = Pt(size)
                 continue
 
+            if token.type == "softbreak":
+                run = paragraph.add_run()
+                run.text = " "
+                continue
+
+            if token.type == "hardbreak":
+                run = paragraph.add_run()
+                run.text = "\n"
+                continue
+
             if token.type != "text":
                 continue
 
@@ -443,13 +481,15 @@ class PowerPointCreator:
     def add_block(self, block):
         kind = block["type"]
 
-        if kind == "paragraph":
-            frame = self.add_textbox(0.75)
-            paragraph = frame.paragraphs[0]
-            paragraph.space_after = Pt(10)
+        # При переходе к другому типу элемента
+        # завершаем текущий текстовый блок.
+        if kind != "paragraph":
+            self.current_text_frame = None
+            self.current_text_shape = None
+            self.current_text_count = 0
 
-            self.add_inline(paragraph, block["content"])
-            self.y += 0.8
+        if kind == "paragraph":
+            self.add_paragraph_block(block["content"])
 
         elif kind == "formula":
             self.add_math_block(block["content"])
