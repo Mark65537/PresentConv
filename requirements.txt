@@ -1,0 +1,5 @@
+markdown-it-py
+python-pptx
+matplotlib
+latex2mathml
+lxml
