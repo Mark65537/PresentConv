@@ -249,21 +249,79 @@ class PowerPointCreator:
         self.text_color = RGBColor(45, 45, 45)
 
     def create(self, markdown_file, output_file=None):
-        slides = self.parser.parse(markdown_file)
+        markdown_file = Path(markdown_file)
 
         if output_file is None:
-            output_file = Path(markdown_file).with_suffix(".pptx")
+            output_file = markdown_file.with_suffix(".pptx")
 
-        # Сначала полностью формируем презентацию в памяти.
-        # До успешного завершения всех операций файл не создаётся.
+        markdown = markdown_file.read_text(encoding="utf-8")
+        lines = markdown.splitlines()
+
+        presentation_title = None
+        presentation_heading_index = None
+        next_heading_index = None
+
+        # Ищем заголовок первого уровня со словом «Презентация».
+        for index, line in enumerate(lines):
+            match = re.match(r"^\s*#\s+(.+?)\s*$", line)
+
+            if not match:
+                continue
+
+            heading = match.group(1)
+
+            presentation_match = re.search(
+                r"\bпрезентация\b",
+                heading,
+                re.IGNORECASE
+            )
+
+            if presentation_match:
+                presentation_title = heading[
+                    presentation_match.end():
+                ].strip()
+
+                presentation_title = presentation_title.strip(
+                    " \t\"'«»„“”"
+                )
+
+                presentation_heading_index = index
+
+                # Находим следующий заголовок первого уровня.
+                for next_index in range(index + 1, len(lines)):
+                    if re.match(r"^\s*#\s+", lines[next_index]):
+                        next_heading_index = next_index
+                        break
+
+                break
+
+        # Удаляем заголовок презентации и весь текст после него
+        # до следующего заголовка первого уровня.
+        if presentation_heading_index is not None:
+            if next_heading_index is not None:
+                lines = lines[next_heading_index:]
+            else:
+                lines = []
+
+        markdown = "\n".join(lines)
+
+        # Передаём текст непосредственно парсеру.
+        slides = self.parser.parse(markdown)
+
+        # Создаём титульный слайд.
+        if presentation_title:
+            self.add_title_slide(presentation_title)
+
+        # Создаём остальные слайды.
         for data in slides:
             self.add_slide(data)
 
-        # Единственная операция сохранения.
+        # Сохраняем презентацию после успешной обработки.
         self.prs.save(str(output_file))
 
         print(f"Презентация создана: {output_file}")
-        print(f"Количество слайдов: {len(slides)}")
+        print(f"Количество слайдов: {len(self.prs.slides)}")
+
 
     def add_paragraph_block(self, content):
         # Если текстового блока ещё нет, создаём его.
@@ -288,6 +346,37 @@ class PowerPointCreator:
         )
 
         self.y += 0.55
+
+    def add_title_slide(self, title):
+        slide = self.prs.slides.add_slide(
+            self.prs.slide_layouts[6]
+        )
+
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = RGBColor(
+            255, 255, 255
+        )
+
+        # Название презентации.
+        title_box = slide.shapes.add_textbox(
+            Inches(1),
+            Inches(2.5),
+            Inches(11.33),
+            Inches(2)
+        )
+
+        frame = title_box.text_frame
+        frame.word_wrap = True
+        frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+        paragraph = frame.paragraphs[0]
+        paragraph.text = title
+        paragraph.alignment = PP_ALIGN.CENTER
+
+        paragraph.font.name = "Arial"
+        paragraph.font.size = Pt(36)
+        paragraph.font.bold = True
+        paragraph.font.color.rgb = self.title_color
 
     def add_slide(self, data):
         self.current_text_frame = None
